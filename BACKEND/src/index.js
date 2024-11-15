@@ -1,9 +1,11 @@
 import connectDB from "./db/index.db.js";
 import app from './app.js'
 
+const port = process.env.PORT || 8000
+
 connectDB().then(() => {
-    app.listen(process.env.PORT || 8000,(req,res) => {
-        console.log("all done");
+    app.listen(port,(req,res) => {
+        console.log(port);
     })
 }).catch((err) => console.log(err)
 )

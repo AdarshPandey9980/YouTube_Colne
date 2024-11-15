@@ -3,6 +3,7 @@ import { User } from "../models/user.model.js";
 import uploadOnCloud from "../utils/Cloudnary.utils.js";
 import ApiError from "../utils/ApiError.utils.js";
 import ApiResponse from "../utils/ApiResponse.utils.js";
+import jwt from "jsonwebtoken";
 
 const generateTokens = async (userId) => {
   try {
@@ -67,9 +68,9 @@ const registerUser = asyncHandler(async (req, res) => {
     userName: userName.toLowerCase(),
   });
 
-  const createdUser = await user
-    .findById(user._id)
-    .select("-password -refreshToken");
+  const createdUser = await User.findById(user._id).select(
+    "-password -refreshToken"
+  );
 
   if (!createdUser) {
     throw new ApiError(500, "something went wrong");
@@ -79,14 +80,16 @@ const registerUser = asyncHandler(async (req, res) => {
 });
 
 const login = asyncHandler(async (req, res) => {
-  const { userName, email, password } = req.body;
+  const { userName, email, password } = await req.body;
+
+  console.log(userName, email, password);
 
   if (!userName || !email) {
-    throw new ApiError(400, "username or email is required");
+    throw new ApiError(400, "username and email is required");
   }
 
   const user = await User.findOne({
-    $or: [{ userName }, { email }],
+    $or: [{ email }, { userName }],
   });
 
   if (!user) {
@@ -115,10 +118,78 @@ const login = asyncHandler(async (req, res) => {
     .cookie("accessToken", accessToken, options)
     .cookie("refreshToken", refreshToken, options)
     .json(
-      new ApiResponse(200, {
-        user: loggedInUser, refreshToken, accessToken
-      }, "User logged in successfully")
+      new ApiResponse(
+        200,
+        {
+          user: loggedInUser,
+          refreshToken,
+          accessToken,
+        },
+        "User logged in successfully"
+      )
     );
 });
 
-export { registerUser, login };
+const logoutUser = asyncHandler(async (req, res) => {
+  await User.findByIdAndUpdate(
+    req.user._id,
+    {
+      $set: {
+        refreshToken: undefined,
+      },
+    },
+    {
+      new: true,
+    }
+  );
+
+  const options = {
+    httpOnly: true,
+    secure: true,
+  };
+
+  return res
+    .status(200)
+    .clearCookie("accessToken", options)
+    .clearCookie("refreshToken", options)
+    .json(new ApiResponse(201, {}), "user logout successfully");
+});
+
+const refreshAccessToken = asyncHandler(async (req, res) => {
+  const incomingRefreshToken =
+    req.cookies.refreshToken || req.body.refreshToken;
+
+  if (!incomingRefreshToken) {
+    throw new ApiError(401, "unauthorized access");
+  }
+
+  try {
+    const decodedToken = jwt.verify(
+      incomingRefreshToken,
+      process.env.ACCESS_TOKEN_SECRET
+    );
+    const user = await User.findById(decodedToken?._id);
+    if (!user) {
+      throw new ApiError(401, "user not found");
+    }
+    if (incomingRefreshToken !== user?.refreshToken) {
+      throw new ApiError(401, "refresh token expired");
+    }
+    const options = {
+      httpOnly: true,
+      secure: true,
+    };
+    const { accessToken, newRefreshToken } = await generateTokens(user._id);
+
+    return res.status(200)
+    .cookie("accessToken", accessToken,options)
+    .cookie("refreshToken", newRefreshToken,options)
+    .json(new ApiResponse(200,{accessToken,refreshToken: newRefreshToken},"Access token refreshed"))
+  } catch (error) {
+    throw new ApiError(401, error.message)
+  }
+});
+
+
+
+export { registerUser, login, logoutUser, refreshAccessToken };
