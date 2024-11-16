@@ -190,6 +190,44 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
   }
 });
 
+const changePassword = asyncHandler(async (req, res) => {
+  const { oldPassword, newPassword } = req.body;
+
+  const user = await User.findById(req.user?._id);
+
+  const isPasswordCorrect = await user.isPassCorrect(oldPassword);
+
+  if (isPasswordCorrect) {
+    user.password = newPassword;
+    await user.save({ validateBeforeSave: false });
+  }else {
+    throw new ApiError(401, "old password is incorrect")
+  }
+  return res.status(200).json(new ApiResponse(200,{}, "password changed successfully"))
+})
+
+const getCurrentUser = asyncHandler(async (req, res) => {
+  const user = await req.user;
+  return res.status(200).json(new ApiResponse(200, user, "user fetched successfully"));
+});
+
+const updateInfo = asyncHandler(async (req, res) => {
+  const {fullName} = req.body;
+
+  if(!fullName){
+    throw new ApiError(400,"fullName is required")
+  }
+
+  const user = await User.findByIdAndUpdate(req.user?._id,{$set:{fullName}},{new:true}).select("-password -refreshToken")
+
+  if(!user){
+    throw new ApiError(500,"something went wrong")
+  }
+
+  return res.status(200).json(new ApiResponse(200,user, "user info updated successfully"))
+});
 
 
-export { registerUser, login, logoutUser, refreshAccessToken };
+
+
+export { registerUser, login, logoutUser, refreshAccessToken, changePassword, getCurrentUser, updateInfo };
